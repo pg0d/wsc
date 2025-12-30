@@ -1,14 +1,16 @@
 #include "wsc.h"
 #include <stdio.h>
-#include <netinet/in.h>
+#include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include <sys/socket.h>
 #include <arpa/inet.h>
-#include <string.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <stdint.h>
 
 #define MAX_PORT 65535
-#define WS_KEY_BUF_SIZE 25 // 16 -> 24 + 1 for null terminator
+#define WSC_KEY_BUF_SIZE 25 // 16 -> 24 + 1 for null terminator
 
 int wsc_client_init(wsc_client_t *client) {
   if (!client->host || client->port <= 0 || client->port > MAX_PORT) {
@@ -38,27 +40,27 @@ int wsc_client_init(wsc_client_t *client) {
 }
 
 int wsc_handshake(wsc_client_t *client, const char *request_path) {
-  sbuf_t ws_req;
-  sbuf_init(&ws_req);
+  sbuf_t wsc_req;
+  sbuf_init(&wsc_req);
 
   char ws_key[32];
   wsc_generate_hs_key(ws_key);
 
-  sbuf_printf(&ws_req, "GET %s HTTP/1.1\r\n", request_path);
-  sbuf_printf(&ws_req, "Host: %s:%d\r\n", client->host, client->port);
-  sbuf_append(&ws_req, "Upgrade: websocket\r\n");
-  sbuf_append(&ws_req, "Connection: Upgrade\r\n");
-  sbuf_printf(&ws_req, "Sec-WebSocket-Key: %s\r\n", ws_key);
-  sbuf_printf(&ws_req, "Sec-WebSocket-Version: 13\r\n\r\n");
+  sbuf_printf(&wsc_req, "GET %s HTTP/1.1\r\n", request_path);
+  sbuf_printf(&wsc_req, "Host: %s:%d\r\n", client->host, client->port);
+  sbuf_append(&wsc_req, "Upgrade: websocket\r\n");
+  sbuf_append(&wsc_req, "Connection: Upgrade\r\n");
+  sbuf_printf(&wsc_req, "Sec-WebSocket-Key: %s\r\n", ws_key);
+  sbuf_append(&wsc_req, "Sec-WebSocket-Version: 13\r\n\r\n");
 
-  ssize_t sent = send(client->sockfd, ws_req.data, ws_req.len, 0);
+  ssize_t sent = send(client->sockfd, wsc_req.data, wsc_req.len, 0);
   if (sent < 0) {
     perror("send failed");
-    sbuf_free(&ws_req);
+    sbuf_free(&wsc_req);
     return -1;
   }
 
-  sbuf_free(&ws_req);
+  sbuf_free(&wsc_req);
 
   char response[512]; 
   ssize_t n = recv(client->sockfd, response, sizeof(response)-1, 0);
@@ -77,7 +79,7 @@ int wsc_handshake(wsc_client_t *client, const char *request_path) {
 }
 
 void wsc_generate_hs_key(char *key) {
-  if (WS_KEY_BUF_SIZE < 25) return;
+  if (WSC_KEY_BUF_SIZE < 25) return;
 
   unsigned char random_bytes[16];
   srand(time(NULL));
@@ -85,7 +87,7 @@ void wsc_generate_hs_key(char *key) {
   for (size_t i = 0; i < 16; i++)
     random_bytes[i] = rand() & 0xFF;
 
-  base64_encode(random_bytes, 16, key, WS_KEY_BUF_SIZE);
+  base64_encode(random_bytes, 16, key, WSC_KEY_BUF_SIZE);
 }
 
 void wsc_client_deinit(wsc_client_t *client) {
@@ -93,5 +95,3 @@ void wsc_client_deinit(wsc_client_t *client) {
   if (client->sockfd >= 0) close(client->sockfd);
   client->sockfd = -1;
 }
-
-
