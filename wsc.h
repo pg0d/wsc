@@ -6,23 +6,40 @@
 #include <stdarg.h>
 #include <string.h>
 
-typedef struct wsc_options {
+typedef struct wsc_client wsc_client_t;
+typedef struct wsc_options wsc_options_t;
+
+typedef enum wsc_event_type {
+  WSC_EVENT_OPEN,
+  WSC_EVENT_MESSAGE,
+  WSC_EVENT_CLOSE,
+  WSC_EVENT_ERROR,
+ } wsc_event_type_t;
+
+struct wsc_options {
   int connect_timeout_sec;
   int recv_timeout_sec;
   int send_timeout_sec;
   int keep_alive;
-} wsc_options_t;
+};
 
-typedef struct wsc_client {
+typedef void (*wsc_on_message_cb)(const char *msg, size_t len);
+
+struct wsc_client {
   int   sockfd;
   char  *host;
   int   port;
-} wsc_client_t;
+  wsc_on_message_cb on_message;
+};
 
 int   wsc_client_init(wsc_client_t *client);
 void  wsc_client_deinit(wsc_client_t *client);
+
 int   wsc_handshake(wsc_client_t *client, const char *request_path);
-void  wsc_generate_hs_key(char *key); // Generate Handshake Key 
+void  wsc_generate_hs_key(char *key); // Generate Handshake Key
+
+void  wsc_event_loop(wsc_client_t *client);
+void  wsc_handle_incoming(wsc_client_t *client, const char *buf, size_t len);
 
 // ==== sbuf_t helper ====
 typedef struct {

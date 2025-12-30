@@ -95,3 +95,69 @@ void wsc_client_deinit(wsc_client_t *client) {
   if (client->sockfd >= 0) close(client->sockfd);
   client->sockfd = -1;
 }
+
+void wsc_event_loop(wsc_client_t *client) {
+  fd_set readfds;
+  char buffer[1024];
+
+  while (1) {
+    FD_ZERO(&readfds);
+    FD_SET(client->sockfd, &readfds);
+    FD_SET(STDIN_FILENO, &readfds);
+
+    int max_fd = (client->sockfd > STDIN_FILENO ? client->sockfd : STDIN_FILENO) + 1;
+
+    int activity = select(max_fd, &readfds, NULL, NULL, NULL);
+    if (activity < 0) {
+      perror("select");
+      break;
+    }
+
+    if (FD_ISSET(client->sockfd, &readfds)) {
+      int n = recv(client->sockfd, buffer, sizeof(buffer), 0);
+      if (n == 0) {
+        perror("server closed connection");
+        break;
+      } else if (n < 0) {
+        perror("recv error");
+        break;
+      }
+      
+      wsc_handle_incoming(client, buffer, n);
+    }
+
+    if (FD_ISSET(STDIN_FILENO, &readfds)) {
+    }
+  }
+}
+
+void wsc_handle_incoming(wsc_client_t *client, const char *buf, size_t len) {
+  if (len < 2) return;
+
+  unsigned char b0 = buf[0];
+  unsigned char b1 = buf[1];
+
+  int optcode = b0 & 0x0F;
+  size_t payload_len = b1 & 0x7F;
+  size_t pos = 2;
+
+  if (payload_len == 126) {
+    if (len < 4) return;
+    payload_len = (buf[2] << 8) | buf[3];
+    pos += 2;
+  } else if (payload_len == 127) {
+    return;
+  }
+
+  if (b1 & 0x80) {
+    perror("Error: masked server frame\n");
+    return;
+  }
+
+  if (pos + payload_len > len) return;
+  const char *payload = buf + pos;
+
+  if (optcode == 0x1 && client->on_message) {
+    client->on_message(payload, payload_len);
+  }
+}
